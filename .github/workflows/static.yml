@@ -43,7 +43,7 @@ jobs:
           npm install
           npm run build --if-present
         env:
-         PUBLIC_URL: "colibri"
+         PUBLIC_URL: "."
          CI: ""
           
       - name: Upload artifact
