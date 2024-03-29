@@ -1,0 +1,110 @@
+/* eslint-disable jsx-a11y/alt-text */
+import React, { useEffect, useRef, useState } from 'react';
+import './DiscussionThreadView.css'; // Import CSS file for styling
+import { MaterializedDiscussionThread } from '../../lib/crdt/Discussions';
+import MenuButton from '../menubutton/MenuButtons';
+import TimeAgo from 'javascript-time-ago'
+
+// English.
+import en from 'javascript-time-ago/locale/en'
+
+TimeAgo.addDefaultLocale(en)
+
+// Create formatter (English).
+const timeAgo = new TimeAgo('en-US')
+
+interface Props {
+    discussion: MaterializedDiscussionThread;
+    entityId: string,
+    userId: string, 
+    note: string,
+    reactions: any,
+    createdAt: Date | undefined, 
+    deletedAt: Date | undefined, 
+    resolvedAt: Date | undefined,
+    userMap: { [userId: string]: { avatar_url: string, login: string }};
+    onResolve: (discussionId: string) => void;
+    onDelete: (discussionId: string) => void;
+    onReaction: (discussionId: string, reaction: string, untoggle: boolean) => void;
+}
+
+const DiscussionThreadView: React.FC<Props> = ({ entityId, userId, userMap, createdAt, deletedAt, onResolve, onDelete, onReaction }) => {
+
+    const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
+    const [showEmoticonMenu, setShowEmoticonMenu] = useState(false);
+    const [commentInput, setCommentInput] = useState('');
+
+    const resizeTextArea = () => {
+        if (!textAreaRef.current) {
+          return;
+        }
+    
+        textAreaRef.current.style.height = "auto"; // will not work without this!
+        textAreaRef.current.style.height = `${textAreaRef.current.scrollHeight}px`;
+      };
+
+    useEffect(() => {
+        resizeTextArea();
+        window.addEventListener("resize", resizeTextArea);
+      }, []);
+
+    
+    const handleEdit = (id: string) => {
+        
+    };
+
+    const handleDelete = (id: string) => {
+        onDelete(id);
+    };
+
+    const handleReaction = (id: string, reaction: string, toggleOff: boolean) => {
+        onReaction(id, reaction, toggleOff);
+        setShowEmoticonMenu(false);
+    };
+
+    return (
+        <div className={`discussion-thread ${ selected ? ' discussion-thread-selected' :''}`} onClick={() => {onActivate(discussion.entityId)}}>
+            <div className="discussion-header">
+                <div className="author-info">
+                    <img src={userMap[userId] ? userMap[userId].avatar_url : 'loading'} />
+                    <span className="author">{userMap[userId] ? userMap[userId].login : 'loading'}</span>
+                    <span className="created-at">{date ? timeAgo.format(new Date(date)): ''}</span>
+                </div>
+                <div className="actions">
+                    {createdAt && (
+                        <MenuButton>
+                            <div onClick={() => { 
+                                    handleEdit(entityId); 
+                                }} >Edit</div>
+                            {!deletedAt && (
+                                <div onClick={() => { 
+                                    handleDelete(entityId); 
+                                }} >Delete</div>
+                            )}
+                            {!resolvedAt && (
+                                <div onClick={() => { 
+                                    handleDelete(entityId); 
+                                }} >Unresolve</div>
+                            )}
+                        </MenuButton>
+                   )}
+                </div>
+            </div>
+            { discussion.createdAt && 
+                <div className="comment-text" onMouseEnter={() => setShowEmoticonMenu(true)} onMouseLeave={() => setShowEmoticonMenu(false)}>
+                    {discussion.note}
+                    {showEmoticonMenu && (
+                        <div className="emoticon-menu">
+                            <span onClick={() => handleReaction(discussion.entityId, 'like', true)}>😀</span>
+                            <span onClick={() => handleReaction(discussion.entityId, 'love', true)}>❤️</span>
+                            <span onClick={() => handleReaction(discussion.entityId, 'angry', true)}>😡</span>
+                        </div>
+                    )}
+                </div>
+            }
+
+        </div>
+    );
+};
+
+export default DiscussionThreadView;

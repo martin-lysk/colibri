@@ -1,0 +1,71 @@
+/* .App {
+  text-align: center;
+  display: flex;
+  margin-top: 40px;
+} */
+/* 
+.App > div:last-child {
+  width: 450px;
+  height: 400px;
+}
+
+.App > div:first-child {
+  width: 450px;
+  height: 400px;
+} */
+
+.App-logo {
+  height: 40vmin;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .App-logo {
+    animation: App-logo-spin infinite 20s linear;
+  }
+}
+
+.App-header {
+  background-color: #282c34;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(10px + 2vmin);
+  color: white;
+}
+
+.App-link {
+  color: #61dafb;
+}
+
+@keyframes App-logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+
+.ql-cursor-caret-container {
+  font-size: 0px;
+}
+
+#ql-cursor-hightlighted_disscussion .ql-tooltip {
+  display: none !important;
+}
+
+#ql-cursor-hightlighted_disscussion .ql-cursor-selection-block {
+  background-color: #FCBC05 !important;
+  z-index: -1;
+}
+
+
+#ql-cursor-hightlighted_disscussion .ql-cursor-flag {
+  display: none !important;
+}
+
+/** selected FCBC05 unselected FEF2CD */

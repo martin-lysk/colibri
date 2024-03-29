@@ -1,0 +1,205 @@
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
+}
+
+
+.quilleditor .ql-container .markdown-body>*:first-child {
+  margin-top: 0 !important;
+}
+
+.quilleditor .ql-container .markdown-body p, 
+.quilleditor .ql-container .markdown-body blockquote, 
+.quilleditor .ql-container .markdown-body ul, 
+.quilleditor .ql-container .markdown-body ol, 
+.quilleditor .ql-container .markdown-body dl, 
+.quilleditor .ql-container .markdown-body table,
+.quilleditor .ql-container .markdown-body pre,
+.quilleditor .ql-container .markdown-body details {
+  margin-top: 0;
+  margin-bottom: 16px;
+}
+
+
+:root {
+  --base-text-weight-light: 300;
+  --base-text-weight-normal: 400;
+  --base-text-weight-medium: 500;
+  --base-text-weight-semibold: 600;
+  --borderColor-muted: #d0d7deb3;
+}
+
+.quilleditor .ql-container .markdown-body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  font-size: 16px;
+  line-height: 1.5;
+  word-wrap: break-word;
+}
+
+.quilleditor .ql-container .markdown-body h1, 
+.quilleditor .ql-container .markdown-body h2, 
+.quilleditor .ql-container .markdown-body h3, 
+.quilleditor .ql-container .markdown-body h4, 
+.quilleditor .ql-container .markdown-body h5, 
+.quilleditor .ql-container .markdown-body h6 {
+  margin-top: 24px;
+  margin-bottom: 16px;
+  font-weight: var(--base-text-weight-semibold, 600);
+  line-height: 1.25;
+}
+
+.quilleditor .ql-container .markdown-body h1 {
+  padding-bottom: .3em;
+  font-size: 2em;
+  border-bottom: 1px solid var(--borderColor-muted, var(--color-border-muted));
+}
+
+.quilleditor .ql-container .markdown-body h2 {
+  padding-bottom: .3em;
+  font-size: 1.5em;
+  border-bottom: 1px solid var(--borderColor-muted, var(--color-border-muted));
+}
+
+.quilleditor .ql-container .markdown-body h3 {
+  font-size: 1.25em;
+}
+
+.quilleditor .ql-container .markdown-body h4 {
+  font-size: 1em;
+}
+
+.quilleditor .ql-container .markdown-body h5 {
+  font-size: .875em;
+}
+
+.quilleditor .ql-container .markdown-body h6 {
+  font-size: .85em;
+  color: var(--fgColor-muted, var(--color-fg-muted));
+}
+
+/** js needs to highlight specific discussions from outside **/
+.ql-editor .discussion {
+  background-color: rgba(252, 188, 5, 0.3);
+}
+
+.github-token-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh; /* Added to take full height of the viewport */
+}
+
+.github-token-input-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.github-token-label {
+  font-weight: bold;
+  margin-bottom: 5px;
+}
+
+.github-token-input {
+  padding: 8px;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  margin-bottom: 10px;
+  width: 500px;
+}
+
+.github-token-button {
+  padding: 8px 20px;
+  background-color: #2ea44f;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+}
+
+.github-token-button:hover {
+  background-color: #2c974b;
+}
+
+
+
+#toolbar-container {
+  border: none;
+  
+  padding: 10px; /* Adjust padding as needed */
+  box-sizing: border-box;
+  z-index: 2;
+}
+
+.toolbar-container {
+  display: flex;
+  border-bottom: 1px solid #ccc;
+  box-shadow: blanchedalmond;
+  
+}
+
+.toolbar-left, .toolbar-right {
+  flex-grow: 1;
+}
+
+.toolbar-center {
+  width: 900px;
+  margin-bottom: 3px;
+}
+
+
+
+.content-container {
+  height: calc(100vh - 50px); /* Adjust to fill remaining viewport height */
+  overflow-y: auto; /* Add vertical scrollbar */
+}
+
+.container {
+  display: flex;
+  height: 100%;
+  margin-top: 6px;
+}
+
+.left, .right {
+  flex-grow: 1;
+  height: 100px; /* Adjust height as needed */
+}
+
+.center {
+  width: 900px;
+  
+  margin-bottom: 10px;
+}
+
+.quilleditor {
+
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+}
+
+
+.toolbar-left-spacer {
+  width: 1200px;
+}
+
+.discussion-thread-wrapper {
+  transition: all 300ms cubic-bezier(0.655, 0.18, 0.3, 1.255);
+}
+
+.ql-container {
+  min-height: 600px ;
+}
+
+
+html {
+  overflow: hidden;
+}
