@@ -1,46 +1,23 @@
-# Getting Started with Create React App
+# Colibri - Collaborative Markdown Editing
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+Colibri, derived from "Consensus Libri," is a React-based SPA designed for collaborative Markdown editing. With its seamless integration with GitHub and a pure Git server backend, Colibri empowers users to collaborate on Markdown documents in real-time.
 
-## Available Scripts
+## Features:
+- **Real-time Collaboration:** Utilize braid.org's Sync9 CRDT for seamless real-time changes.
+- **Git Protocol Integration:** Communicate directly with Git's smart protocol for efficient collaboration.
+- **WYSIWYG Editing:** Edit Markdown documents using QuillJS, providing a Google Docs-like experience.
+- **Annotation and Discussion:** Annotate passages, discuss sections, and collaborate in real-time.
+- **Version Control:** Track changes and annotations within a separate Git reference.
+- **GitHub Pages Hosting:** Hosted on GitHub Pages, ensuring easy access and deployment.
+- **Vendor and Host Independence:** Core relies on Git's smart protocol, enabling flexibility across vendors and hosts.
 
-In the project directory, you can run:
+## Workflow:
+1. **Open Markdown from GitHub Link:** Access Markdown files from GitHub repositories.
+2. **Edit Markdown in Rich Text Editor:** Use QuillJS to edit Markdown content with ease.
+3. **Annotate and Discuss:** Add comments, discuss sections, and collaborate in real-time.
+4. **Track Changes:** All changes and annotations are tracked within a separate Git reference.
+5. **Commit Changes:** Once consensus is reached, commit a new version back to the origin branch.
 
-### `npm start`
-
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
-
-The page will reload if you make edits.\
-You will also see any lint errors in the console.
-
-### `npm test`
-
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
-
-### `npm run build`
-
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
-
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
-
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
-
-### `npm run eject`
-
-**Note: this is a one-way operation. Once you `eject`, you can’t go back!**
-
-If you aren’t satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
-
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you’re on your own.
-
-You don’t have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn’t feel obligated to use this feature. However we understand that this tool wouldn’t be useful if you couldn’t customize it when you are ready for it.
-
-## Learn More
-
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
-
-To learn React, check out the [React documentation](https://reactjs.org/).
+## Important Note:
+- **Private Research Side Project:** Colibri is a private research side project and not intended for production use.
+- **GitHub Pages Hosting:** Hosted on GitHub Pages, with communication via an Isomorphic GitHub CORS proxy.
