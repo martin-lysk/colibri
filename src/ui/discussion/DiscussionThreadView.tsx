@@ -3,6 +3,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import './DiscussionThreadView.css'; // Import CSS file for styling
 import { MaterializedDiscussionThread } from '../../lib/crdt/Discussions';
 import MenuButton from '../menubutton/MenuButtons';
+import { MentionsInput, Mention } from 'react-mentions'
 import TimeAgo from 'javascript-time-ago'
 
 // English.
@@ -12,6 +13,29 @@ TimeAgo.addDefaultLocale(en)
 
 // Create formatter (English).
 const timeAgo = new TimeAgo('en-US')
+
+function fetchUsers(query: any, callback: any) {
+
+
+    if (!query) return
+
+    ;(async () => {
+        const res = await fetch(`https://api.github.com/search/users?q=${query}`, {
+            method: 'GET',
+            headers: {
+              'Accept': 'application/vnd.github+json',
+            //   'Authorization': `Bearer ${ghToken}`,
+              'X-GitHub-Api-Version': '2022-11-28'
+            }
+          })
+        const json = await res.json();
+
+        const users = json.items.map((user: any ) => ({ display: user.login, id: user.login }));
+
+        callback(users)
+    })();
+  }
+  
 
 interface Props {
     discussion: MaterializedDiscussionThread;
@@ -40,21 +64,6 @@ const DiscussionThreadView: React.FC<Props> = ({ discussion, userMap, selected, 
         textAreaRef.current.style.height = "auto"; // will not work without this!
         textAreaRef.current.style.height = `${textAreaRef.current.scrollHeight}px`;
       };
-
-    
-
-    useEffect(() => {
-        const onFocus = () => {
-            setCommentInputActive(true);
-        }
-
-        const textArea = textAreaRef.current
-        textArea?.addEventListener("focus", onFocus);
-
-        return () => {
-            textArea?.removeEventListener("focus", onFocus);
-        }
-    }, []);
 
     useEffect(() => {
         resizeTextArea();
@@ -135,12 +144,34 @@ const DiscussionThreadView: React.FC<Props> = ({ discussion, userMap, selected, 
                 </div>
             ))}
 
+                { (selected || commentInputActive) && (
             <div className="comment-input">
+            {/* <MentionsInput
+                 value={commentInput}
+                 onChange={(e) => {
+                        setCommentInput(e.target.value);
+                        resizeTextArea();
+                    }}
+                // style={defaultStyle}
+                placeholder="Mention any Github user by typing `@` followed by at least one char"
+                a11ySuggestionsListLabel={"Suggested Github users for mention"}
+            >
+                <Mention
+                displayTransform={login => `@${login}`}
+                trigger="@"
+                data={fetchUsers}
+                // style={defaultMentionStyle}
+                />
+            </MentionsInput> */}
+
                 <textarea
                     className="textarea"
                     value={commentInput}
                     placeholder={ !discussion.note ? 'Comment' : 'Reply' }
                     ref={textAreaRef}
+                    onFocus={() => {
+                        setCommentInputActive(true)
+                    }}
                     onChange={(e) => {
                         setCommentInput(e.target.value);
                         resizeTextArea();
@@ -150,7 +181,7 @@ const DiscussionThreadView: React.FC<Props> = ({ discussion, userMap, selected, 
                 {/* <input type="text" value={commentInput} onChange={(e) => setCommentInput(e.target.value)} placeholder={ !discussion.createdAt ? 'Comment' : 'Reply' } /> */}
                 {/* <button onClick={handleCancel}>Cancel</button> */}
             </div>
-
+)}
             { commentInputActive && (    
             <div className='comment-button-bar' >
                 <button className="button button-secondary float-right" onClick={() => {

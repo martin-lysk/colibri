@@ -3,7 +3,6 @@ import ReactDOM from 'react-dom/client';
 
 import git from 'isomorphic-git'
 import http from 'isomorphic-git/http/web' 
-import LightningFS from '@isomorphic-git/lightning-fs'
 
 import './index.css';
 import App from './App';
@@ -22,12 +21,6 @@ function waitThreeSeconds(): Promise<void> {
 global.http = http;
 // import reportWebVitals from './reportWebVitals';
 
-// @ts-ignore
-window.fs = new LightningFS('fs')
-// @ts-ignore
-window.pfs = window.fs.promises
-// @ts-ignore
-let pfs = window.pfs;
 
 
 

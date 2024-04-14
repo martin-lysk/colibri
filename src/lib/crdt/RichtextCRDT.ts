@@ -1,20 +1,18 @@
-import { Delta } from "quill/core";
+import Delta from 'quill-delta'
 import { sequence_crdt } from "./SequenceCRDT";
-import Quill from "quill"
-import { AnyCnameRecord } from "dns";
-import quillDeltaToMdast from './quillDeltaToMdast'
+import quillDeltaToMdast from './utill/quillDeltaToMdast'
 import { gfmToMarkdown } from 'mdast-util-gfm'
 import {toMarkdown} from 'mdast-util-to-markdown'
 
 
-import {remark} from 'remark'
-import remarkGfm from 'remark-gfm'
+import mdToAnotatedSequence from "./utill/MdToAnnotatedSequence";
 
 
 // const Delta = Quill.import('delta');
 
 export type PersistableVersion = { 
     id: string, 
+    userId: string,
     t: 'PersistableVersion',
     parents: string[], 
     splices: any, 
@@ -42,339 +40,6 @@ type SequenceAnnotation = {
     currentVersions?: string[],
 }
 
-function fromCrdt(delta: Delta) {
-
-    const ast = quillDeltaToMdast(delta);
-    
-    const md = toMarkdown(ast, {extensions: [gfmToMarkdown()]});
-
-    // console.log(md);
-
-    // let lineOps = [];
-
-    // // headings do not span over the whole line in the deltas - they are attached to the end
-    // for (const op of delta.ops) {
-    //     if (!op.insert) {
-    //         throw new Error('delta is not a document');
-    //     }
-
-    //     if (op.insert === '\n') {
-    //         if (op.attributes?.header) {
-    //             // TODO add attribute to previous line and ignore this op
-    //         }
-
-    //         // TODO check if need to do this for other formats as well 
-    //     } else {
-    //         const lineOps = op.insert!.split('\n');
-
-    //         if (lineOps.length === 1) {
-    //             // no new line - just add the op 
-    //             lineOps
-    //         } else {
-    //             let lineOpIndex = 0;
-    //         for (const lineOp of lineOps) {
-    //             lineOps.push()
-    //             lineOpIndex ++;
-    //         }
-    //         }
-            
-    //     }
-    //     const lineOps = op.insert!.split('\n');
-    //     for (const lineOp of lineOps) {
-    //         lineOps.push()
-    //     }
-    // }
-
-    // @ts-ignore
-    window.wentthough = md;
-    
-} 
-
-function toCrdt(document: string, version: string) {
-    // let documentTokens = CommonMarkSource.fromRaw(document).convertTo(
-    //     OffsetSource
-    //   );&&&NEWLINE&&&
-
-    const returnSpaceMarker = '[$&return-space-marker&$]';
-    const newLineHelperMarker = '[$&new-line-helper-marker&$]';
-    const zeroWidthSpace = 'X' // '\u200b';
-
-    // replace [^\n]\n\n with '\n' - real enter in quill (one offset)
-    const preparedDocument = document
-    // const preparedDocument = document.replace(/\n{2,}/g, (match, group, offset) => {
-    //     // '\n\n\n' <- length = 3 <- 
-    //     const crSpaces = match.length - 2;
-        
-    //     // we add a marker "[$&return-spce-marker&$]" to prevent remark to remove the ignored \n 
-    //     return '\n\n' + returnSpaceMarker.repeat(crSpaces);
-    // });
-
-
-    // IGNORE (abrivate by the format)
-    // four spaces at the beginning is code block
-    // spaces before - is dealt with by lists
-    
-    // ESCAPE - information would get lost
-    // 1-3 spaces before  # 
-    // spaces more than one in headers  #   bar # 
-    // spaces after the closing sequence
-    
-    // non escape closing sequence #
-
-
-    const proc = remark().use(remarkGfm, {})
-    const actual = proc.parse(preparedDocument)
-
-    const md = toMarkdown(actual, {extensions: [gfmToMarkdown()]});
-
-    // @ts-ignore
-    window.actual = actual;
-    // @ts-ignore
-    window.back = md;
-
-    // paragraph is 1
-
-    let text = '';
-    let annotations = [] as SequenceAnnotation[];
-    let openInsAnnotatoin = undefined as number | undefined
-    
-    const crSpacePosition = [] as number[];
-
-    traverse(actual, 0);
-
-    // 0123456789
-    // |-------| <- a [0,8] 
-    //  |---|||  <- b  [1,5] -> [0,1]
-    //    ||   <-c    [3,4] -> [0,1]
-    // 
-    // width = sum(widthChilds) 
-    // left = min(leftParents)
-    function traverse(node: any, currentStart: number, ) {
-        if (node.children && node.children.length > 0) {
-
-            let siblingsWidth = 0;
-            // if (node.type === 'paragraph' && node.position.start.offset !== currentStart) {
-            //     console.log('OFF BY ' + (node.position.start.offset - currentStart));
-            //     console.log(node.type);
-                
-            //     const unrenderedSpaces = node.position.start.offset - currentStart;
-            //     siblingsWidth += unrenderedSpaces;
-            //     text += zeroWidthSpace.repeat(unrenderedSpaces)
-            // }
-
-            for (const childNode of node.children) {
-                siblingsWidth += traverse(childNode, currentStart + siblingsWidth)
-            };
-
-            let addedChars = 0;
-
-            if (node.type === 'heading') {
-                // new lines after headings are removed by remark - we need this for the delta to attache the new heading information to
-                text += newLineHelperMarker
-                // the placeholder will get replaced by one \n -> add this to the offset
-                addedChars += 1;
-                // at quill the header annot ation is attached to \n that follows the heading
-                annotations.push({
-                    start: currentStart + siblingsWidth,
-                    end: currentStart + siblingsWidth + 1,
-                    growType: 'grow-right',
-                    version: version,
-                    data: {
-                        name: 'header',
-                        data: node.depth,
-                    }
-                })
-            } else if (node.type === 'strong') {
-                annotations.push({
-                    start: currentStart,
-                    end: currentStart + siblingsWidth,
-                    growType: 'grow-right',
-                    version: version,
-                    data: {
-                        name: 'bold',
-                        data: true,
-                    }
-                })
-            } else if (node.type === 'emphasis') {
-                annotations.push({
-                    start: currentStart,
-                    end: currentStart + siblingsWidth,
-                    growType: 'grow-right',
-                    version: version,
-                    data: {
-                        name: 'italic',
-                        data: true,
-                    }
-                })
-            } else if (node.type === 'delete') {
-                annotations.push({
-                    start: currentStart,
-                    end: currentStart + siblingsWidth,
-                    growType: 'grow-right',
-                    version: version,
-                    data: {
-                        name: 'strike',
-                        data: true,
-                    }
-                })
-            } else if (node.type === 'paragraph') {
-                addedChars += 1;
-                text += '\n';
-            } else if (node.type === 'html') {
-                
-                // if (node.value.match(/<br\s*\/?>/gi).length > 0) {
-                //     leafWidth = 1;
-                //     text += '\n';
-                // }
-            }
-
-            return siblingsWidth + addedChars;
-        } else {
-            
-            let leafWidth = (node.position.end.offset - node.position.start.offset)
-            console.log('TYPE', node.type, node.value);
-            console.log('orginal position', node.position)
-            console.log('new position', {
-                start: currentStart,
-                end: currentStart + leafWidth,
-            })
-            let newReplacements = 0;
-            if (node.type === 'text') {
-                 
-                // replace all single \n with a space - to prevent quil to turn them into paragraphs
-                const preparedText = node.value.replace(/((?<!\n)\n(?!\n))/g, (match: string, group: any, offset: number) => {
-                    crSpacePosition.push(currentStart + offset);
-                    return ' ';
-                });
-
-                leafWidth = preparedText.length;
-                text += preparedText
-
-
-                // const countReturnSpaceMarker = node.value.split(returnSpaceMarker).length - 1
-                // newReplacements = countReturnSpaceMarker * (returnSpaceMarker.length - 1); 
-
-                // if (text.endsWith('\n\n')) {
-                //     // ignore all leading \n in current text - offset correction done previously
-                //     newReplacements += 1;
-                // } else if (text.endsWith('\n') && node.value.startsWith('\n') && !node.value.startsWith('\n\n')) {
-                //     // the previous text closed with a single \n - check if the current value starts with an \n 
-                //     // ignore the case that it starts with \n\n - because this would be counted with the search for \n
-                //     newReplacements += 1;
-                // }
-
-                // // we will replacce all \n\n with a single \n later on - this reduces the offset 
-                // newReplacements += [...node.value.matchAll(/\n+/g)].length
-                
-                // text += node.value;
-                
-            } else if (node.type === 'html') {
-                if (node.value === '<ins>') {
-                    
-                    openInsAnnotatoin = currentStart;
-                    leafWidth = 0;
-                } else if (node.value === '</ins>') {
-                    leafWidth = 0;
-                    if (openInsAnnotatoin === undefined) {
-                        // TODO handle unopend ins
-                    } else {
-                        annotations.push({
-                            start: openInsAnnotatoin,
-                            end: currentStart,
-                            growType: 'grow-right',
-                            version: version,
-                            data: {
-                                name: 'underline',
-                                data: true,
-                            }
-                        });
-                        openInsAnnotatoin = undefined
-                    }
-                } if (node.value.match(/<br\s*\/?>/gi)?.length > 0) {
-                    // TODO <br> creates a paragaph at the moment - introduce br blot in quill
-                    leafWidth = 1;
-                    text += '\n';
-                }
-            }
-            return leafWidth - newReplacements;
-        }
-    }
-
-    for (const crSpace of crSpacePosition) {
-        annotations.push({
-            start: crSpace,
-            end: crSpace+1,
-            growType: 'grow-right',
-            version: version,
-            data: {
-                name: 'crspace',
-                data: true,
-            }
-        })
-    }
-
-    // // replace single [^\n]\n[^\n] with ' ' and add md-newLine annotation (no offsets)
-    // text = text.replace(/((?<!\n)\n(?!\n))/g, (match, group, offset) => {
-    //     crSpacePosition.push(offset);
-    //     return ' ';
-    // });
-
-    // use an zero width space to represent a non rendered \n
-    text = text.split(returnSpaceMarker).join('\u200b')
-
-    // replace helper marker we aded for headers with  real \n
-    text = text.split(newLineHelperMarker).join('\n')
-
-
-    // let crdtAnnotations = [] as SequenceAnnotation[];
-    // for (const annotation of documentTokens.annotations) {
-    //   if (annotation.type === 'heading') {
-    //     crdtAnnotations.push({
-    //       start: annotation.start,
-    //       version: version,
-    //       end: annotation.end,
-    //       growType: "grow-right",
-    //       data: {
-    //         name: "header",
-    //         data: annotation.attributes.level
-    //       }
-    //     })
-        
-    //   } else if (annotation.type === 'strong') {
-    //       crdtAnnotations.push({
-    //         start: annotation.start,
-    //         end: annotation.end,
-    //         version: version,
-    //         growType: "grow-right",
-    //         data: {
-    //           name: "bold",
-    //           data: true,
-    //         }
-    //       })
-    //   } else if (annotation.type === 'link') {
-    //     // href, title
-    //   } else if (annotation.type === 'em') {
-    //     crdtAnnotations.push({
-    //       start: annotation.start,
-    //       end: annotation.end,
-    //       version: version,
-    //       growType: "grow-right",
-    //       data: {
-    //         name: "italic",
-    //         data: true,
-    //       }
-    //     })
-    //   } 
-    // }
-    // debugger;
-
-    console.log(annotations);
-    return {
-        sequence: text,
-        annotations: annotations
-    };
-  }
-
 export class RichtextCrdt extends EventTarget {
 
     rootVersion: string;
@@ -382,19 +47,21 @@ export class RichtextCrdt extends EventTarget {
     annotations: SequenceAnnotation[];
     currentHeadVersions: any[];
     rootNode: any;
-    author: string;
+    userId: string;
+    sessionId: string;
     randomSeed: string;
     currentVersionIndex: number;
 
-    constructor(startSequence: string, author: string) {
+    constructor(startSequence: string, userId: string, sessionId: string) {
         super();
         this.rootVersion = 'v_' + 1// + RichtextCrdt.hash(startSequence)
         this.versions = {
             [this.rootVersion]: null,
         }
-        const parsedCRDT = toCrdt(startSequence, this.rootVersion);
+        const parsedCRDT = mdToAnotatedSequence(startSequence, this.rootVersion);
 
         this.annotations = [];
+        this.userId = userId;
 
         this.addAnnotationsLocal(this.rootVersion, parsedCRDT.annotations)
 
@@ -402,11 +69,24 @@ export class RichtextCrdt extends EventTarget {
 
         this.rootNode = sequence_crdt.create_node(this.rootVersion, parsedCRDT.sequence)
 
-        this.author = author;
+        this.sessionId = sessionId;
         this.randomSeed = crypto.randomUUID() + '';
         this.currentVersionIndex = 0;
 
-        fromCrdt(this.getDelta());
+        
+        // fromCrdt(this.getDelta());
+    }
+
+    toMdAst() {
+        return quillDeltaToMdast(this.getDelta());
+    }
+
+    toMd() {
+        return toMarkdown(this.toMdAst(), {extensions: [gfmToMarkdown()]});
+    }
+
+    setUserId(userId: string) {
+        this.userId = userId;
     }
 
     public dispatch(e: VersionAdded): boolean {
@@ -441,9 +121,30 @@ export class RichtextCrdt extends EventTarget {
 
         const annotaionById = { }
 
-        let sequenceDelta = new Delta([{
-            insert: this.getSequence()
-        }]);
+        const rawSequence = this.getSequence();
+ 
+        const ops = [];
+        const textParts = rawSequence.split('\u000b');
+        let textPartI = 0;
+        for (const textPart of textParts) {
+            
+            if (textPartI > 0) {
+                ops.push({
+                    insert: {
+                        'LineBreak': true,
+                    },
+                })
+            }
+            if (textPart.length > 0) {
+                ops.push({
+                    insert: textPart.split('\u200b').join(''),
+                })
+                
+            }
+            textPartI += 1;
+        }
+
+        let sequenceDelta = new Delta(ops);
         
         console.log('getDelta')
         this.traverseFrom(this.rootVersion, (version: string) => {
@@ -453,8 +154,19 @@ export class RichtextCrdt extends EventTarget {
                 }
     
                 const annotationDelta = new Delta();
-                annotationDelta.retain(annotation.currentStart);
-                annotationDelta.retain(annotation.currentEnd! - annotation.currentStart, { [annotation.data.name]: annotation.data.data });
+                if (annotation.data.name === 'image') {
+                    annotationDelta.retain(annotation.currentStart);
+                    annotationDelta.insert({ image: annotation.data.value }, annotation.data.attributes)
+                } else if (annotation.data.name === 'break') {
+                    annotationDelta.retain(annotation.currentStart);
+                    annotationDelta.insert({ break: true})
+                } else if (annotation.data.name === 'divider') {
+                    annotationDelta.retain(annotation.currentStart);
+                    annotationDelta.insert({ divider: true})
+                } else {
+                    annotationDelta.retain(annotation.currentStart);
+                    annotationDelta.retain(annotation.currentEnd! - annotation.currentStart, { [annotation.data.name]: annotation.data.value });
+                }
                 
                 // console.log(JSON.stringify(sequenceDelta))
                 // console.log(JSON.stringify(annotationDelta))
@@ -469,6 +181,7 @@ export class RichtextCrdt extends EventTarget {
     }
     
     handleDeltaLocal(delta: Delta) {
+        
         let currentPosition = 0;
         let numElementstoDelete = 0;
         let elementsToInsert = '';
@@ -511,7 +224,9 @@ export class RichtextCrdt extends EventTarget {
             }
 
             if (typeof op.insert === 'string') {
-                elementsToInsert = op.insert;
+                elementsToInsert += op.insert;
+            } else if (typeof op.insert === 'object') {
+                elementsToInsert += '\u000b'; /// image and break
             }
 
             // [position, num_elements_to_delete, elements_to_insert, optional_sort_key].
@@ -524,7 +239,7 @@ export class RichtextCrdt extends EventTarget {
         const localVersion = this.addVersionLocal(splices);
 
         let currentCRDTState = this.getDelta();
-
+        
         const nullAttributes = {} as any;
 
         for (const op of currentCRDTState.ops) {
@@ -543,6 +258,8 @@ export class RichtextCrdt extends EventTarget {
                 const attributes =  op.attributes ? op.attributes : nullAttributes;
                 if (typeof op.insert === 'string') {
                     attributesDelta.retain(op.insert!.length, attributes)
+                } else if (typeof op.insert === 'object') {
+                    attributesDelta.retain(1, attributes); /// image and break
                 } else {
                     attributesDelta.retain(op.retain!, op.attributes)
                 }
@@ -553,6 +270,11 @@ export class RichtextCrdt extends EventTarget {
 
 
         if (afterEditState.ops.length > 0) {
+            // ok we have a line format at the very last line - make it an insert of \n instead of an remain since we don't have a trailing \n :-/
+            // if (afterEditState.ops[afterEditState.ops.length-1].retain === 1) {
+            //     delete afterEditState.ops[afterEditState.ops.length-1].retain;
+            //     afterEditState.ops[afterEditState.ops.length-1].insert = '\n';
+            // }
 
             const diff1 = currentCRDTState.diff(afterEditState)
             
@@ -568,6 +290,7 @@ export class RichtextCrdt extends EventTarget {
                         start: currentPosition,
                         end: typeof op.retain === 'number' ? currentPosition + op.retain : currentPosition + (op.insert as string).length,
                         // TODO map types to grow types - for now this works since we only support no-grow for link
+                        // TODO find the beginning of the line and
                         growType: attribute === 'link' ? 'no-grow' : 'grow-right', 
                         data: {
                             name: attribute, 
@@ -577,28 +300,31 @@ export class RichtextCrdt extends EventTarget {
                 }
                 currentPosition += op.retain! as number
             }
-            
-                //     
-
-            //debugger;
         }
         
         // TODO increase anotaion pointer (not shared)
 
         this.addAnnotationsLocal(localVersion, annotationsInVersion);
 
+        const annotationsToPush = structuredClone(annotationsInVersion)
+
+        for (const an of annotationsToPush) {
+            delete an.currentEnd;
+            delete an.currentStart;
+        }
+
         this.dispatch({
             type: 'versionAdded',
             source: 'local',
             batchIndex: 0,
             batchSize: 1,
-            version: { id: localVersion, t: 'PersistableVersion', parents: currentHead, splices: splices, annotations: annotationsInVersion}
+            version: { id: localVersion, userId: this.userId, t: 'PersistableVersion', parents: currentHead, splices: splices, annotations: annotationsInVersion}
         })
     }
 
     private addVersionLocal(splices: any) {
         this.currentVersionIndex += 1;
-        const newLocalVersion = this.author + '_' + this.randomSeed + '_' +  this.currentVersionIndex;
+        const newLocalVersion = this.sessionId + '_' + this.randomSeed + '_' +  this.currentVersionIndex;
 
         const ancestors: any = {}; 
         for (const parent of this.currentHeadVersions) {
@@ -660,18 +386,18 @@ export class RichtextCrdt extends EventTarget {
                 // slices should be ordered by there start postion already... TODO check and assert this
                 // lets check if the slice happend before or in the annotation (slices after this annotation are not relevant)
 
-                const maxLength = this.getSequence().length -1;
+                const maxLength = this.getSequence().length;
 
                 if (insert_pos <= currentAnnotationStart && sliceEnd <= currentAnnotationStart) {
                     // slice starts and ends before the annotation move the annotation to the left or right
                     currentAnnotationStart += offset;
                     currentAnnotationEnd += offset
-                    if (currentAnnotationEnd > maxLength) {
-                        throw new Error('growed to much');
-                    }
+                    // if (currentAnnotationEnd > maxLength) {
+                    //     throw new Error('growed to much');
+                    // }
 
                     console.log('case 1', structuredClone(annotation))
-                } else if (insert_pos < currentAnnotationStart && sliceEnd > currentAnnotationEnd) {
+                } else if (insert_pos <= currentAnnotationStart && sliceEnd > currentAnnotationEnd) {
                     // slice overlaps the annotation fully - delete the annotation - since the width of a slice is defined by the deletion of the characters
                     currentAnnotationStart = -1;
                     // deletion cant get undone - no more checks needed
@@ -685,18 +411,29 @@ export class RichtextCrdt extends EventTarget {
                     // slice starts on the annotation but ends in it - remove the overlapping part of the slice from the annotations beginning 
                     console.log('case 3.1', structuredClone(annotation))
                     currentAnnotationEnd += offset;
-                    if (currentAnnotationEnd > maxLength) {
-                        throw new Error('growed to much');
-                    }
+                    // if (currentAnnotationEnd > maxLength) {
+                    //     throw new Error('growed to much');
+                    // }
                 } else if (insert_pos > currentAnnotationStart && sliceEnd < currentAnnotationEnd) {
                     // slice starts and ends in an annotation expand or decrease the annotation (in/decreases the end) by its offset
                     console.log('case 4', structuredClone(annotation))
                     console.log('currentAnnotationEnd: ' +currentAnnotationEnd);
                     console.log('addedOffset: ' +offset);
                     currentAnnotationEnd += offset;
-                    if (currentAnnotationEnd > maxLength) {
-                        throw new Error('growed to much');
-                    }
+                    // if (currentAnnotationEnd > maxLength) {
+                    //     throw new Error('growed to much');
+                    // }
+                } else if (insert_pos > currentAnnotationStart && sliceEnd === currentAnnotationEnd && insert_pos < sliceEnd) {
+
+                
+                    // slice starts in an annotation and ends on it expand or decrease the annotation (in/decreases the end) by its offset
+                    console.log('case 4', structuredClone(annotation))
+                    console.log('currentAnnotationEnd: ' +currentAnnotationEnd);
+                    console.log('addedOffset: ' +offset);
+                    currentAnnotationEnd += offset;
+                    // if (currentAnnotationEnd > maxLength) {
+                    //     throw new Error('growed to much');
+                    // }
                 } else if (insert_pos > currentAnnotationStart && insert_pos < currentAnnotationEnd && sliceEnd > currentAnnotationEnd) {
                     // slices starting in an annotation and ending outside - expand the annotation by the offset
                     console.log('case 5', structuredClone(annotation))
@@ -705,9 +442,9 @@ export class RichtextCrdt extends EventTarget {
                     // slices starting at the end of an annotation depend on the growth methodic
                     if (annotation.growType === 'grow-right') {
                         currentAnnotationEnd += offset;
-                        if (currentAnnotationEnd > maxLength) {
-                            throw new Error('growed to much');
-                        }
+                        // if (currentAnnotationEnd > maxLength) {
+                        //     throw new Error('growed to much');
+                        // }
                     } else {
                         // type no-grow not releavnt
                     }
@@ -782,8 +519,13 @@ export class RichtextCrdt extends EventTarget {
         }
         
         this.addSlicesToAnnotations(this.currentHeadVersions, splicesMissingInAddedAnnotations, version.annotations);
-        this.annotations = this.annotations.concat(version.annotations);
 
+        this.annotations = this.annotations.concat(structuredClone(version.annotations));
+        
+        version.annotations.forEach((a) => {
+            delete a.currentEnd;
+            delete a.currentStart;
+        })
         this.dispatch({
             type: 'versionAdded',
             source: 'remote',

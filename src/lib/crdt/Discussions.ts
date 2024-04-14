@@ -65,9 +65,6 @@ export class EventStore extends EventTarget {
     }
 
     addEvent(event: DataEvent, local: boolean = false) {
-
-        
-
         if (local) {
             this.localOnly[event.entityId] = true;
         }
@@ -91,14 +88,13 @@ export class EventStore extends EventTarget {
     getEventsByFilterFn(filterFn: (e: DataEvent) => boolean) {
         return this.events.filter(filterFn);
     }
-
     
 }
 
 export type DataEvent = {
     id: string,
     t: 'DataEvent',
-    eventType: 'create' | 'update' | 'delete',
+    eventType: 'init' | 'create' | 'update' | 'delete',
     entityType: string,
     entityId: string, 
     date: number, 
@@ -106,48 +102,23 @@ export type DataEvent = {
     userId: string, 
 }
 
-export class User {
-    userId: string;
-
-    constructor(userId: string) {
-        this.userId = userId;
-    }
-
-    static create(eventStore: EventStore, userId: string, date: Date = new Date()) {
-        const createdAt = date.getTime();
-        eventStore.addEvent({
-            id: 'u_' + crypto.randomUUID(),
-            t: 'DataEvent',
-            eventType: 'create',
-            entityType: DiscussionReply.entityType,
-            entityId: userId,
-            data: {
-            }, 
-            date: createdAt,
-            userId: userId,
-        })
-    }
-
-    static async enricht() {
-
-    }
-} 
-
 export class DiscussionNote {
 
     entityId: string;
-    createdAt: number;
-    createdBy: string;
-
-    constructor(entityId: string, userId: string, createdAt: number) {
+    
+    constructor(entityId: string) {
         this.entityId = entityId;
-        this.createdAt = createdAt;
-        this.createdBy = userId;
     }
 
     getNote(eventStore: EventStore) {
         return this.getNoteEvent(eventStore)?.data.note;
     }
+
+    private getNoteFirstEvent(eventStore: EventStore) {
+        return eventStore.getEventsByFilterFn((e) => e.entityId === this.entityId && (e.eventType === 'init' || e.eventType === 'create') ).pop()
+    }
+
+
 
     private getNoteEvent(eventStore: EventStore) {
         return eventStore.getEventsByFilterFn((e) => e.entityId === this.entityId && e.data.note !== undefined).pop()
@@ -238,12 +209,14 @@ export class DiscussionNote {
 
     
     materializeCurrentState(eventStore: EventStore) {
+        // TODO fetch creation event 
+        const noteInitEvent = this.getNoteFirstEvent(eventStore)!;
         const noteEvent = this.getNoteEvent(eventStore);
         const deletionEvent = this.getDeletionEvent(eventStore);
         return {
             entityId: this.entityId,
-            createdAt: new Date(this.createdAt),
-            createdBy: this.createdBy,
+            createdAt: new Date(noteInitEvent.date),
+            createdBy: noteInitEvent.userId,
             note: noteEvent?.data.note,
             noteUpdatedAt: noteEvent?.date ? new Date(noteEvent.date) : undefined,
             deletedAt: deletionEvent?.date ? new Date(deletionEvent.date) : undefined,
@@ -270,7 +243,7 @@ export class DiscussionThread extends DiscussionNote {
         eventStore.addEvent({
             id: 'e_' + crypto.randomUUID(),
             t: 'DataEvent',
-            eventType: 'create',
+            eventType: 'init',
             entityType: DiscussionThread.entityType,
             entityId: entityId,
             data: {
@@ -291,8 +264,8 @@ export class DiscussionThread extends DiscussionNote {
 
     static getAllMaterialized(eventStore: EventStore) {
         const materialized : MaterializedDiscussionThread[] = [];
-        for (const event of eventStore.getEventsByFilterFn((e) => e.entityType === DiscussionThread.entityType && e.eventType === 'create')) {
-            const materializedDiscssion = new DiscussionThread(event.entityId, event.userId, event.date).materializeDiscussionThread(eventStore)
+        for (const event of eventStore.getEventsByFilterFn((e) => e.entityType === DiscussionThread.entityType && e.eventType === 'init')) {
+            const materializedDiscssion = new DiscussionThread(event.entityId).materializeDiscussionThread(eventStore)
             // if (!materializedDiscssion.deletedAt) {
                 materialized.push(materializedDiscssion);
             // }
@@ -310,7 +283,7 @@ export class DiscussionThread extends DiscussionNote {
         const replies: DiscussionReply[] = [];
         for (const replyCreationEvent of replyCreationEvents) {
             replies.push(
-                new DiscussionReply(this.entityId, replyCreationEvent.userId, replyCreationEvent.entityId, replyCreationEvent.date)
+                new DiscussionReply(this.entityId, replyCreationEvent.entityId)
             );
         }
         return replies;
@@ -323,7 +296,7 @@ export class DiscussionThread extends DiscussionNote {
             resolved: resolveEvent?.data.resolved,
             resolvedToggledAt: resolveEvent?.date,
             resolvedToggledBy: resolveEvent?.userId,
-            replies: this.getReplyEvents(eventStore).map(reply => reply.materializeDiscussionReply(eventStore))
+            replies: this.getReplyEvents(eventStore).map(reply => reply.materializeDiscussionReply(eventStore)) as MaterializedDiscussionReply[]
         }
     }
 }
@@ -348,8 +321,8 @@ export class DiscussionReply extends DiscussionNote {
 
     threadId: string;
 
-    constructor(threadId: string, userId: string, entityId: string, createdAt: number) {
-        super(entityId, userId, createdAt)
+    constructor(threadId: string, entityId: string) {
+        super(entityId)
         this.threadId = threadId;
     }
 
@@ -388,5 +361,4 @@ export type MaterializedDiscussionReply = {
     note?: string,
     deletedAt?: Date,
     deletedBy?: string,
-
 } & MaterializedDiscussionNote

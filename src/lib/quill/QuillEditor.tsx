@@ -17,9 +17,72 @@ import { RichtextCrdt, VersionAdded } from '../crdt/RichtextCRDT'
 import Quill from 'quill';
 import QuillCursors from 'quill-cursors'
 import { DiscussionAttributor } from './DiscussionAttributor';
-import IQuillRange from 'quill-cursors/dist/quill-cursors/i-range';
-import { annotatedTag } from 'isomorphic-git';
 import { MaterializedDiscussionThread } from '../crdt/Discussions';
+
+import Table from './modules/table';
+
+const BlockEmbed = Quill.import('blots/block/embed') as any;
+var Parchment = Quill.import('parchment') as any;
+
+class DividerBlot extends BlockEmbed {
+  static blotName = 'divider';
+  static tagName = 'hr';
+}
+
+Quill.register(DividerBlot);
+
+Quill.register({'modules/table': Table});
+
+// class Break2 extends EmbedBlot {
+//   static value() {
+//     return undefined;
+//   }
+
+//   optimize() {
+//     // if (this.prev || this.next) {
+//     //   this.remove();
+//     // }
+//   }
+
+//   length() {
+//     return 0;
+//   }
+
+//   value() {
+//     return '';
+//   }
+// }
+// Break2.blotName = 'break';
+// Break2.tagName = 'br';
+
+
+// Quill.register({
+//   'blots/break': Break2,
+// }, true);
+
+// let Break = Quill.import('blots/break') as any;
+// Break.prototype.optimize = () => {
+//   // we don't optimize breakes to not split them into paragraphs
+// };
+
+// // let Break = Quill.import('blots/break') as any;
+// // let Embed = Quill.import('blots/embed') as any;
+
+// // Break.prototype.insertInto = function(parent: any, ref: any) {
+// //   debugger;
+// //   Embed.prototype.insertInto.call(this, parent, ref)
+// // };
+// Break.prototype.length= function() {
+//   return 1;
+// }
+// Break.prototype.value= function() {
+//   return '\u000b';
+// }
+
+// let TextBlot = Quill.import('blots/text') as any;
+// let Block = Quill.import('blots/block') as any;
+
+// (Block as any).defaultChild = null
 
 // Quill.register({ 'formats/comment': new Comment() });
 
@@ -47,6 +110,40 @@ import { MaterializedDiscussionThread } from '../crdt/Discussions';
 //   STRIKETHROUGH: icons.strike,
 // };
 const saveOnEnter = true;
+
+let Embed = Quill.import('blots/embed') as any;
+
+class ShiftEnterBlot extends Embed {
+  static create(value: any) {
+    let node = super.create(value);
+    node.__rand = value;
+
+    node.innerHTML = '<br>';
+    return node;
+  }
+
+
+  static formats(domNode: any) {
+    let blot = Parchment.Registry.find(domNode);
+
+    if (blot && blot.parent && blot.parent.children &&
+        blot.parent.children.head !== blot)
+        return domNode.__rand;
+    }
+  
+    html() {
+      return '<br />'
+    }      
+}
+
+ShiftEnterBlot.blotName = 'LineBreak';
+ShiftEnterBlot.tagName = 'SPAN';
+ShiftEnterBlot.className = 'shift-enter-class';
+
+// Inline.order = [ShiftEnterBlot.blotName, ...Inline.order];
+
+Quill.register(ShiftEnterBlot);
+
 
 const Delta = Quill.import('delta');
 
@@ -182,8 +279,8 @@ export default forwardRef<QuillEditorHandle, QuillEditorProps>(({
 
     const onVersionAdded = (e: any) => {
       let event = e.detail as VersionAdded; 
-      const currentQuillEditor = quillEditor.current
-      ;
+      const currentQuillEditor = quillEditor.current;
+      
       if (event.source === 'remote' && event.batchSize === (event.batchIndex + 1) && currentQuillEditor !== undefined) {
             
         const contents = richtextCRDT.getDelta();
@@ -239,8 +336,8 @@ export default forwardRef<QuillEditorHandle, QuillEditorProps>(({
       const discussionAnnotations = {} as any;
       if (discussions.size > 0) {
         richtextCRDT.annotations.forEach(annnotation => {
-          if (annnotation.data.name === 'discussion' && annnotation.data.data) {
-            for (const discussionIdInAnnotation of annnotation.data.data) {
+          if (annnotation.data.name === 'discussion' && annnotation.data.value) {
+            for (const discussionIdInAnnotation of annnotation.data.value) {
               if (discussions.has(discussionIdInAnnotation)) {
                 if (!discussionAnnotations[discussionIdInAnnotation]) {
                   discussionAnnotations[discussionIdInAnnotation] = {
@@ -310,10 +407,24 @@ export default forwardRef<QuillEditorHandle, QuillEditorProps>(({
       // }
     }
     if (eventName === 'text-change' && source !== 'silent') {
+      
       if (!quillEditor.current) {
         return;
       }
 
+      const backslashPosition = oldRangeOrDelta.length() - 1;
+
+      if (rangeOrDelta.ops.length === 1 && rangeOrDelta.ops[0].retain === 1 && backslashPosition === 0) {
+        if (Object.values(rangeOrDelta.ops[0].attributes).filter(v => v !== null).length > 0) {
+          delete rangeOrDelta.ops[0].retain;
+          rangeOrDelta.ops[0].insert = '\n';
+        }
+      } else if (rangeOrDelta.ops.length === 2 && rangeOrDelta.ops[0].retain === backslashPosition && rangeOrDelta.ops[1].retain === 1) {
+        if (Object.values(rangeOrDelta.ops[1].attributes).filter(v => v !== null).length > 0) {
+          delete rangeOrDelta.ops[1].retain;
+          rangeOrDelta.ops[1].insert = '\n';
+        }
+      }
       queuedDeltas.push(rangeOrDelta);
 
       // combine delete and insert to replacement
@@ -367,6 +478,7 @@ export default forwardRef<QuillEditorHandle, QuillEditorProps>(({
       modules: {
         // multi cursor support
         cursors: true,
+        table: true,
         toolbar: {
                 container: '#toolbar-container',
                 // [
@@ -375,6 +487,30 @@ export default forwardRef<QuillEditorHandle, QuillEditorProps>(({
                 //     [{ 'list': 'ordered'}, { 'list': 'bullet' }, { 'list': 'check' }],   
                 // ],
                 handlers: {
+                    'table-add' : function() {
+                        (editor.getModule('table') as Table).insertTable(2, 2);
+                    },
+                    'table-insert-row-above' : function() {
+                      (editor.getModule('table') as Table).insertRowAbove();
+                    },
+                    'ql-table-insert-row-below' : function() {
+                      (editor.getModule('table') as Table).insertRowBelow();
+                    },
+                    'ql-table-insert-column-left' : function() {
+                      (editor.getModule('table') as Table).insertColumnLeft();
+                    },
+                    'ql-table-insert-column-right' : function() {
+                      (editor.getModule('table') as Table).insertColumnLeft();
+                    },
+                    'ql-table-delete-table' : function() {
+                      (editor.getModule('table') as Table).deleteTable();
+                    },
+                    'ql-table-delete-row' : function() {
+                      (editor.getModule('table') as Table).deleteRow();
+                    },
+                    'ql-table-delete-column' : function() {
+                      (editor.getModule('table') as Table).deleteColumn();
+                    },
                     'discussion': function () {
 
                         const selection = editor.getSelection(false)
@@ -400,7 +536,50 @@ export default forwardRef<QuillEditorHandle, QuillEditorProps>(({
                         // return discussion;
                     }
                 }
+        },
+        keyboard: {
+          bindings: {
+            // handleEnter: {
+            //   key: 'Enter',
+            //   handler: function (range: any, context: any) {
+            //     if (range.length > 0) {
+            //       editor.scroll.deleteAt(range.index, range.length);  // So we do not trigger text-change
+            //     }
+            //     let lineFormats = Object.keys(context.format).reduce(function(lineFormats: any, format: string) {
+            //       if (Parchment.query(format, Parchment.Scope.BLOCK) && !Array.isArray(context.format[format])) {
+            //         lineFormats[format] = context.format[format];
+            //       }
+            //       return lineFormats;
+            //     }, {});
+            //     var previousChar = editor.getText(range.index - 1, 1);
+            //     // Earlier scroll.deleteAt might have messed up our selection,
+            //     // so insertText's built in selection preservation is not reliable
+            //     editor.insertText(range.index, '\n', lineFormats, Quill.sources.USER);
+            //     if (previousChar == '' || previousChar == '\n') {
+            //       editor.setSelection(range.index + 2, Quill.sources.SILENT);
+            //     } else {
+            //       editor.setSelection(range.index + 1, Quill.sources.SILENT);
+            //     }
+            //     // (editor.selection as any).scrollIntoView();
+            //     Object.keys(context.format).forEach((name) => {
+            //       if (lineFormats[name] != null) return;
+            //       if (Array.isArray(context.format[name])) return;
+            //       if (name === 'link') return;
+            //       editor.format(name, context.format[name], Quill.sources.USER);
+            //     });
+            //   }
+            // },
+            linebreak: {
+              key: 'Enter',
+              shiftKey: true,
+              handler: function (range: any, context: any) {
+                editor.insertEmbed(range.index, 'LineBreak', true, 'user');
+                editor.setSelection(range.index + 1, Quill.sources.SILENT);
+	              return false; // Don't call other candidate handlers
+              }
             }
+          }
+        }
       }
     });
     editor.root.setAttribute('spellcheck', 'false');

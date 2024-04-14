@@ -1,23 +1,51 @@
-
-import { StdioNull } from 'child_process';
-import { time } from 'console';
 import git, { PromiseFsClient } from 'isomorphic-git'
 import http from 'isomorphic-git/http/web' 
-import { EntryType } from 'perf_hooks';
 
 
-const noteFileName = 'changelog'
+const changeLogNoteFilename = 'changelog'
+const knownHeadFilename = 'head'
+const headFilename = 'headfile'
+const corsProxy = 'https://cors.isomorphic-git.org'
+
 
 export type ListEntry = {
     [key: string]: any; 
     t: string,
     id: string; 
+    userId: string;
 };
+
+// colaboration bases on the current branch and the filename:
+// refs/collab/main/filepath
+// it stores the last known head of a file in a file called head 
+
+async function getOid(fs: any, dir: any, ref: string, filePath: string) {
+    const fpToOid = await git.walk({
+        fs,
+        dir,
+        trees: [git.TREE({ ref })],
+        map: async function(filepath, [refTreeEl]) {
+          // ignore directories
+          if (filepath !== filePath || !refTreeEl) {
+            return
+          }
+          
+          // generate ids
+          const fileOid = await refTreeEl.oid()
+          
+          return {
+           [`${filepath}`]: fileOid,
+          }
+        },
+      })
+
+    return (fpToOid as any)[0][filePath] as string;
+}
 
 export class AppendOnly extends EventTarget {
 
     fs: PromiseFsClient;
-    ghToken: string;
+    ghToken: string  | null;
     folder: string;
     ref: string;
     githubRepoUrl: string;
@@ -31,15 +59,21 @@ export class AppendOnly extends EventTarget {
     private syncedEntries: ListEntry[];
     uncommitedEntiries: ListEntry[];
 
-    baseFile: string;
+    baseFileContent: string;
+    baseFileOid: string;
 
-    private constructor(fs: PromiseFsClient, ghToken: string, folder: string, ref = 'refs/collab/filepath', githubRepoUrl: string, filePath: string, fileRef: string, syncInterval: number) {
+    access: 'none' | 'read' | 'write';
+
+    state: 'unknown' | 'fresh' | 'colaboration';
+
+    anonymousUser = true;
+
+    private constructor(fs: PromiseFsClient, ghToken: string | null, folder: string, ref: string, githubRepoUrl: string, filePath: string, fileRef: string, syncInterval: number) {
         super();
         this.fs = fs;
         this.ghToken = ghToken;
         this.folder = folder; 
         this.ref = ref;
-        this.githubRepoUrl = 
         this.filepath = filePath;
         this.fileRef = fileRef;
         this.githubRepoUrl = githubRepoUrl;
@@ -47,15 +81,17 @@ export class AppendOnly extends EventTarget {
         this.uncommitedEntiries = [];
         this.currentCommitHash = '';
         this.syncInterval = syncInterval;
-        this.baseFile = '';
+        this.baseFileContent = '';
+        this.baseFileOid = '';
+        this.access = 'none';
+        this.state = 'unknown'
     }
 
-    static async init(fs: any, ghToken: string, folder: string, baseRef = 'refs/collab/', githubFilePath: string, init: boolean, syncinterval: number, timeOffset: number) {
+    static async init(fs: any, ghToken: string | null, folder: string, baseRef: string, githubFilePath: string, init: boolean, syncinterval: number, timeOffset: number) {
 
         // Extract information from link like:
         // - https://github.com/isomorphic-git/isomorphic-git/blob/main/README.md
 
-        debugger;
         const githubUrlParts = githubFilePath.split('/');
 
         if (githubUrlParts[2] !== 'github.com' || githubUrlParts[5] !== 'blob') {
@@ -66,14 +102,10 @@ export class AppendOnly extends EventTarget {
         const fileRefOrOid = githubUrlParts[6]
         const filePath = githubUrlParts.slice(7).join('/');
 
-        const basePath = githubUrlParts[githubUrlParts.length-1];
+        const appendOnly = new AppendOnly(fs, ghToken, folder, baseRef + fileRefOrOid + '/' + filePath, githuUrl, filePath, fileRefOrOid, syncinterval);
 
-        const appendOnly = new AppendOnly(fs, ghToken, folder, baseRef + basePath, githuUrl, filePath, fileRefOrOid, syncinterval);
-
-        appendOnly.log('waiting: '+ timeOffset)
         await new Promise(resolve => setTimeout(resolve, timeOffset));
-        appendOnly.log('waiting done: '+ timeOffset)
-
+        
         try {
             await fs.mkdir(appendOnly.folder);
 
@@ -82,31 +114,36 @@ export class AppendOnly extends EventTarget {
                 fs: appendOnly.fs,
                 http,
                 dir: appendOnly.folder,
-                corsProxy: 'https://cors.isomorphic-git.org',
+                corsProxy:corsProxy,
                 url: appendOnly.githubRepoUrl,
-                ref: 'main',
+                ref: fileRefOrOid,
                 singleBranch: true,
                 depth: 1000
             });
 
         } catch (e) {
+            // TODO handle failure -
             console.log('catched')
             console.log(e);
+            throw Error("didn't work - no access to clone the repo? " + (e as Error).message)
         }
 
-        appendOnly.baseFile = await fs.readFile(appendOnly.folder +  '/' + filePath, {encoding: 'utf8'});
-        console.log(appendOnly.baseFile);
+        appendOnly.baseFileOid = await getOid(appendOnly.fs, appendOnly.folder, fileRefOrOid, filePath);
+        if (!appendOnly.baseFileOid) {
+            throw new Error("Files oid " + filePath + " not resolved");
+        }
+        appendOnly.baseFileContent = await fs.readFile(appendOnly.folder +  '/' + filePath, {encoding: 'utf8'});
         
         try {
-            // workaround since single branch doesn't seem to work atm
+            // TODO workaround since single branch doesn't seem to work atm
             await git.setConfig({
                 fs: appendOnly.fs,
                 dir: appendOnly.folder, 
                 path: 'remote.origin.fetch',
                 value: appendOnly.ref+ ':' + appendOnly.ref,
-              })
+            })
 
-            console.log('Fetching notes from remote')
+            console.log('Try fetching existing collaboration state from remote (ref: ' + appendOnly.ref +')')
             const collaborationFetchResult = await git.fetch({
                 fs: appendOnly.fs,
                 http,
@@ -116,65 +153,127 @@ export class AppendOnly extends EventTarget {
                 remoteRef: appendOnly.ref,
                 singleBranch: true,
             })
-            console.log('Fetching notes from remote - successfull')
-            
             appendOnly.currentCommitHash = collaborationFetchResult.fetchHead ?? '';
 
-            const note = await git.readNote({
+            console.log('Fetching existing collaboration state from remote - successfull')   
+            appendOnly.state = 'colaboration'
+        } catch (e) {
+            if ((e as any).code !== 'NotFoundError')   {
+                throw e;
+            }
+            appendOnly.state = 'fresh';
+        }
+
+        let head: string | undefined = undefined
+
+        
+        if (appendOnly.state === 'colaboration') {
+            // ok nice we seem to have read access - lets check if there is a head already?
+            try {
+                console.log('Reading head file')
+                head = new TextDecoder().decode(await git.readNote({
+                    fs: appendOnly.fs,
+                    dir: appendOnly.folder,
+                    ref: appendOnly.ref,
+                    oid: knownHeadFilename,
+                }));
+                console.log('Reading head file - sucessfull - head at: '+ head)
+    
+                
+            } catch (e: any) {
+                // ok seems like the note does not exist yet
+                appendOnly.state = 'unknown';
+            }
+
+            console.log('Reading change log file')
+            const changeLogNote = await git.readNote({
                 fs: appendOnly.fs,
                 dir: appendOnly.folder,
                 ref: appendOnly.ref,
-                // TODO use a better oid here - this is the file name of the append only log file
-                oid: noteFileName,
+                oid: changeLogNoteFilename,
             });
+            console.log('Reading change log file - sucessfull')
+
+
+            if (head !== appendOnly.baseFileOid) {
+                throw new Error("File " + filePath + " has changed in " + fileRefOrOid +" not support atm");
+            }
 
             console.log('Integration of existing state')
             
-            appendOnly.addSyncedFromNote(note);
-            
-        } catch (e) {
-            // note does not exist yet?
-            console.log('note does not exist yet.... ')
-            console.log(e)
-            if (init) {
-                appendOnly.log('creating initial note: '+ timeOffset)
-                const note = await git.addNote({
-                    fs: appendOnly.fs,
-                    dir: appendOnly.folder,
-                    ref: appendOnly.ref,
-                    oid: noteFileName,
-                    note: "",
-                    force: true,
-                    author: {
-                        name: 'test',
-                        email: 'test@test.de',
-                    }
-                });
-                appendOnly.log('pushing initial note: '+ timeOffset)
-                await git.push({
-                    fs: appendOnly.fs,
-                    http,
-                    corsProxy: 'https://cors.isomorphic-git.org',
-                    url: appendOnly.githubRepoUrl,
-                    dir: appendOnly.folder,
-                    ref: appendOnly.ref,
-                    remoteRef: appendOnly.ref,
-                    force: true,
-                    onAuth: () => {
-                        return { username: appendOnly.ghToken }
-                    },
-                }) 
-                appendOnly.log('pushing initial note - succesfull: '+ timeOffset)
-                appendOnly.currentCommitHash = note;
-            }
-            
+            appendOnly.addSyncedFromNote(changeLogNote);
         }
         
-        
-        appendOnly.doSyncInterVal();
-        
-
         return appendOnly;
+    }
+
+    async startSync(userId: string, ghToken?: string) {
+
+        if (ghToken) {
+            this.ghToken = ghToken
+        }
+
+        this.anonymousUser = false;
+        for (const uncommitedEntiry of this.uncommitedEntiries) {
+            uncommitedEntiry.userId = userId;
+        }
+
+        // TODO pull once again first?
+
+        // try to push the latest state 
+        if (this.state === 'fresh') {
+            console.log('creating initial note:')
+            const head = await git.addNote({
+                fs: this.fs,
+                dir: this.folder,
+                ref: this.ref,
+                oid: knownHeadFilename,
+                note: this.baseFileOid,
+                force: true,
+                author: {
+                    name: 'test',
+                    email: 'test@test.de',
+                }
+            });
+            const noteCommitHash = await git.addNote({
+                fs: this.fs,
+                dir: this.folder,
+                ref: this.ref,
+                oid: changeLogNoteFilename,
+                note: "",
+                force: true,
+                author: {
+                    name: 'test',
+                    email: 'test@test.de',
+                }
+            });
+            console.log('pushing initial note: ')
+            await git.push({
+                fs: this.fs,
+                http,
+                corsProxy:corsProxy,
+                url: this.githubRepoUrl,
+                dir: this.folder,
+                ref: this.ref,
+                remoteRef: this.ref,
+                force: true,
+                onAuth: () => {
+                    if (!this.ghToken) {
+                        return;
+                    }
+                    return { username: this.ghToken }
+                },
+            }) 
+            console.log('pushing initial note - succesfull:')
+            this.currentCommitHash = noteCommitHash;
+        }
+
+        return this.doSyncInterVal();
+    }
+
+    stopSync() {
+        this.ghToken = null;
+        this.anonymousUser = true;
     }
 
     getSyncedEntries<T extends ListEntry>(type: string) { 
@@ -188,16 +287,24 @@ export class AppendOnly extends EventTarget {
         }
 
         this.uncommitedEntiries.push(listEntry);
+
+        this.dispatchEvent(new CustomEvent('uncommittedChanged', { }));
+
         this.log('current uncommited:');
         console.log(this.uncommitedEntiries);
     }
 
     private async doSyncInterVal() {
-        await this.syncEntries();
+        if (!this.ghToken) {
+            return;
+        }
+        const syncResult = await this.syncEntries();
 
         setTimeout(() => {
             this.doSyncInterVal();
         }, this.syncInterval)
+
+        return syncResult;
     }
 
     private addSyncedFromNote(note: Uint8Array) {
@@ -257,13 +364,16 @@ export class AppendOnly extends EventTarget {
         if (syncRunEntries.length > 0) {
             const note = this.toString();
             this.uncommitedEntiries = [];
+
+            this.dispatchEvent(new CustomEvent('uncommittedChanged', { }));
+            
             this.log('found uncommited entries - writing note');
             console.log(note);
             const noteCommit = await git.addNote({  
                 fs: this.fs,
                 dir: this.folder,
                 ref: this.ref,
-                oid: noteFileName,
+                oid: changeLogNoteFilename,
                 note: note, // contains uncommited and synced entries
                 force: true,
                 author: {
@@ -314,7 +424,7 @@ export class AppendOnly extends EventTarget {
                     },
                     mergeDriver: ({contents}) => {
                         this.log('resolving conflicts')
-                        // theirs
+                        
                         let theirs = contents[2];
                         console.log(theirs);
                         console.log(contents);
@@ -339,14 +449,13 @@ export class AppendOnly extends EventTarget {
                 
                 if (!mergeResult.mergeCommit) {
                     this.currentCommitHash = mergeResult.oid!;
-                    this.log('No merge was needed - only changes from remot?')
-                    // ok the was no merge needed - we have not been ahead of remote - but remote was before us - update
+                    this.log('No merge was needed - only changes from remote')
+                    // ok the was no merge needed - we have not been ahead of remote - but remote was ahaead of us - update
                     const note = await git.readNote({
                         fs: this.fs,
                         dir: this.folder,
                         ref: this.ref,
-                        // TODO use a better oid here - this is the file name of the append only log file
-                        oid: noteFileName,
+                        oid: changeLogNoteFilename,
                     });
         
                     this.addSyncedFromNote(note);
@@ -358,8 +467,7 @@ export class AppendOnly extends EventTarget {
                     fs: this.fs,
                     dir: this.folder,
                     ref: this.ref,
-                    // TODO use a better oid here - this is the file name of the append only log file
-                    oid: noteFileName,
+                    oid: changeLogNoteFilename,
                 });
         
                 this.addSyncedFromNote(note);
@@ -370,19 +478,21 @@ export class AppendOnly extends EventTarget {
             console.log(e);
         }
         
-        
         try {
             this.log('Pushing changes ' + this.currentCommitHash);
             const pushResult = await git.push({
                 fs: this.fs,
                 http,
-                corsProxy: 'https://cors.isomorphic-git.org',
+                corsProxy:corsProxy,
                 url: this.githubRepoUrl,
                 dir: this.folder,
                 ref: this.ref,
                 remoteRef: this.ref,
                 force: true,
                 onAuth: () => {
+                    if (!this.ghToken) {
+                        return;
+                    }
                     return { username: this.ghToken }
                 },
             }) 
@@ -416,6 +526,7 @@ export class AppendOnly extends EventTarget {
     private has(entry: ListEntry) {
         return this.syncedEntries.find(el => el.id === entry.id) !== undefined || this.uncommitedEntiries.find(el => el.id === entry.id);
     } 
+
     private toStringOf(entries: ListEntry[]) {
         let output = '';
         for (const listEntry of entries) {

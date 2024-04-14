@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import DiscussionThreadView from './DiscussionThreadView';
 import { MaterializedDiscussionThread } from '../../lib/crdt/Discussions';
 const padding = 20;
@@ -72,7 +72,6 @@ const DiscussionList = ({
     onComment,
     onReaction} : Props) => {
 
-
     const [heightsByThreadId, setHeightsByThreadId] = useState<{[threadId: string]: number}>({})
     const [calculatedTopsByThreadId, setCalculatedTopsByThreadId] = useState<{[thread: string]: number}>({});
 
@@ -108,9 +107,6 @@ const DiscussionList = ({
         setHeightsByThreadId(heights);
       }, [discussions]);
 
-console.log('const [discussionThreadsMeassures, setdiscussionThreadsMeassures] = useState<Measurements[]>([]);const [discussionThreadsMeassures, setdiscussionThreadsMeassures] = useState<Measurements[]>([]);const [discussionThreadsMeassures, setdiscussionThreadsMeassures] = useState<Measurements[]>([]);')
-      console.log(disussionTops)
-
     const comments = [
         {
             id: 'comment1',
@@ -130,7 +126,8 @@ console.log('const [discussionThreadsMeassures, setdiscussionThreadsMeassures] =
                 
                 <div
                     key={discussion.entityId}
-                    className='discussion-thread-wrapper'
+                    
+                    className={`discussion-thread-wrapper ${ discussion.entityId === selected ? ' discussion-thread-wrapper-selected' :''}`}
                     style={{top: calculatedTopsByThreadId[discussion.entityId] ?? 0, position: 'absolute' }}
                 >
                 <DiscussionThreadView

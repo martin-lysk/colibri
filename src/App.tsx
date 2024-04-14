@@ -1,3 +1,4 @@
+/* eslint-disable jsx-a11y/alt-text */
 import React from 'react';
 import logo from './logo.svg';
 import './App.css';
@@ -7,7 +8,8 @@ import { RichtextCrdt, VersionAdded, PersistableVersion } from './lib/crdt/Richt
 import { useEffect, useRef, useState } from 'react';
 
 import http from 'isomorphic-git/http/web' 
-import LightningFS from '@isomorphic-git/lightning-fs'
+// @ts-ignore
+import { createNodeishMemoryFs } from '@lix-js/fs'
 
 
 import 'quill/dist/quill.core.css';
@@ -21,9 +23,11 @@ import DiscussionList from './ui/discussion/DiscussionList';
 import DiscussionThreadView from './ui/discussion/DiscussionThreadView';
 import { EventStore,  DiscussionThread, MaterializedDiscussionThread, DiscussionReply, DiscussionNote, DataEvent } from './lib/crdt/Discussions';
 
-const fs = new LightningFS('fs').promises;
+const fs = createNodeishMemoryFs();
 
-const baseRef = 'refs/collab/news4213fddfdf2324gfff2gg2ddsdddggfasdsfadasfdkkdfsffdadasf4294dff3552552226';
+const GH_TOKEN_KEY = 'gh_token_temp'
+
+const baseRef = 'refs/collab/alpha4/';
 
 // Parse the URL and get the query parameters
 const urlParams = new URLSearchParams(window.location.search);
@@ -42,11 +46,15 @@ function App() {
 
   const [loading, setLoading] = useState(true);
   const [crdt, setCrdt] = useState<RichtextCrdt | undefined>(undefined);
-  const [ghToken, setGhToken] = useState<string | null>(localStorage.getItem("gh_token"))
+  const [showGithubLogin, setShowGithubLogin] = useState(false);
+  const [ghToken, setGhToken] = useState<string | null>(localStorage.getItem(GH_TOKEN_KEY))
   const [githubUserId, setGithubUserId] = useState<string | undefined>(undefined);
+  const [userId, setUserId] = useState<string>('ANONYMOUS');
   const [docUrl, setDocUrl] = useState<string | null>(urlParams.get('doc'))
   const [selectedDiscussion, setSelectedDiscussion] = useState<string | null>(null);
   const [disussionTops, setDisussionTops] = useState<{[discussionId: string]: number}>({})
+  const [unsyncedEntries, setUnsyncedEntries] = useState(0);
+  const [appendOnly, setAppendOnly] = useState<undefined|AppendOnly>(undefined);
 
   const [githubUserMap, setGithubUserMap] = useState<{[userId: string]: {
     avatar_url: string,
@@ -62,18 +70,23 @@ function App() {
 
   const quillEditorRef = useRef<QuillEditorHandle>(null);
 
-  const loadGithubUse = async (userId: string) => {
+  const loadGithubUser = async (userId: string) => {
     if (githubUserMap[userId]) {
       return githubUserMap
     }
 
+    const headers = {
+      'Accept': 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28'
+    } as any
+
+    if (ghToken) {
+      headers['Authorization'] = `Bearer ${ghToken}`;
+    }
+    
     const response = await fetch('https://api.github.com/user/' + userId, {
         method: 'GET',
-        headers: {
-          'Accept': 'application/vnd.github+json',
-          'Authorization': `Bearer ${ghToken}`,
-          'X-GitHub-Api-Version': '2022-11-28'
-        }
+        headers: headers
       })
       if (!response.ok) {
         throw new Error('Network response was not ok');
@@ -101,7 +114,7 @@ function App() {
     // You can add your logic here for handling the token, such as sending it to a server
     console.log('GitHub token entered:', token);
     // Reset the input field after submission if needed
-    localStorage.setItem("gh_token", token)
+    localStorage.setItem(GH_TOKEN_KEY, token)
     setGhToken(token);
   };
 
@@ -121,8 +134,18 @@ function App() {
         }
         return response.json();
       })
-      .then(data => setGithubUserId(data.id))
-      .catch(error => console.error('There was a problem with your fetch operation:', error));
+      .then(data => { 
+        setUserId(data.id); 
+        setGithubUserId(data.id);
+        crdt?.setUserId(data.id);
+        discussionStore.remote?.startSync(data.id, ghToken);
+
+        loadGithubUser(data.id);
+      })
+      .catch(error => {
+        setGhToken(null);
+        console.error('There was a problem with your fetch operation:', error)
+      });
     }
   }, [ghToken]) 
 
@@ -140,14 +163,14 @@ function App() {
   }, [])
 
   useEffect(() => {
-    if (githubUserId && ghToken && docUrl) {
-      AppendOnly.init(fs, ghToken, '/asdasd' + githubUserId, baseRef, docUrl, true, 2000, 1).then(appendOnly => {
+    if (docUrl) {
+      AppendOnly.init(fs, ghToken, '/folder-for-appendonly', baseRef, docUrl, true, 2000, 1).then(freshAppendOnly => {
+        
+        const crdt = new RichtextCrdt(freshAppendOnly.baseFileContent, userId ,crypto.randomUUID());
+        crdt.addVersions(freshAppendOnly.getSyncedEntries<PersistableVersion>('PersistableVersion'))
 
-        const crdt = new RichtextCrdt(appendOnly.baseFile, githubUserId);
-        crdt.addVersions(appendOnly.getSyncedEntries<PersistableVersion>('PersistableVersion'))
-
-        for (const event of appendOnly.getSyncedEntries<DataEvent>('DataEvent')) {
-          loadGithubUse(event.userId);
+        for (const event of freshAppendOnly.getSyncedEntries<DataEvent>('DataEvent')) {
+          loadGithubUser(event.userId);
         }
       
         crdt.addEventListener('versionAdded', (e: any) => {
@@ -161,20 +184,25 @@ function App() {
                 delete annotation.currentVersions;
             }
   
-            appendOnly.add(version);
+            freshAppendOnly.add(version);
           }
         })
   
-        appendOnly.addEventListener('newentries', (e: any) => {
-  
+        freshAppendOnly.addEventListener('uncommittedChanged', (e: any) => {
 
-          
-          
+          setUnsyncedEntries(freshAppendOnly.uncommitedEntiries.length)
+
+        })
+
+        freshAppendOnly.addEventListener('newentries', (e: any) => {
+
+          setUnsyncedEntries(freshAppendOnly.uncommitedEntiries.length)
+  
           let listEntriesByType = e.detail as {[type: string]: ListEntry[]}; 
 
           if (listEntriesByType['DataEvent']) {
             for (const event of listEntriesByType['DataEvent']) {
-              loadGithubUse(event.userId);
+              loadGithubUser(event.userId);
             }
           }
 
@@ -183,16 +211,34 @@ function App() {
           }
         })
   
+        setAppendOnly(freshAppendOnly);
         setCrdt(crdt);
-        discussionStore.registerRemote(appendOnly);
+        discussionStore.registerRemote(freshAppendOnly);
       });
     }
-  }, [githubUserId, ghToken, docUrl])
+  }, [docUrl])
+
+  useEffect(()=> {
+    if (ghToken && githubUserId) {
+      appendOnly?.startSync(githubUserId, ghToken)
+    } else {
+      appendOnly?.stopSync()
+    }
+  }, [githubUserId, appendOnly])
 
   return (
     
     <div className="App">
-      { ghToken == null &&
+      { !showGithubLogin && !ghToken && unsyncedEntries > 0 &&  
+        <div className='floating-div'>
+          Login to sync your suggestions
+          <button onClick={() => {setShowGithubLogin(true)}}>
+            Sign in
+          </button>
+        </div>
+      }
+      { showGithubLogin &&
+      <div className="modal-mask">
        <div className="github-token-container">
         <div className="github-token-input-container">
           <label htmlFor="githubToken" className="github-token-label">
@@ -207,13 +253,19 @@ function App() {
               setToken(event.target.value);
             }}
           />
+          <div>
+          <button onClick={() => {setShowGithubLogin(false) }} className="github-token-button">
+            Cancel
+          </button>
           <button onClick={onGithubTokenClick} className="github-token-button">
             Submit
           </button>
+          </div>
         </div>
       </div>
+      </div>
       }
-      { ghToken != null && docUrl == null && 
+      { docUrl == null && 
        <div className="github-token-container">
         <div className="github-token-input-container">
           <label htmlFor="githubToken" className="github-token-label">
@@ -233,16 +285,27 @@ function App() {
         </div>
       </div>
       }
-      { ghToken !== null && crdt === undefined && docUrl !== null &&
+      { !showGithubLogin && crdt === undefined && docUrl !== null &&
         <div>LOADING....</div>
       }
-      { githubUserId && crdt &&
+      { crdt &&
       <>
       <div className="toolbar-container">
-            <div className="toolbar-left"></div>
-            <div className="toolbar-center" id="toolbar-container">
-            
-          
+        <div className="toolbar-left">
+        </div>
+        <div className="toolbar-center" id="toolbar-container">
+
+
+          {/* <span >
+            <button className="ql-table-add">+table</button>
+            <button className="ql-table-insert-row-above">^+row</button>
+            <button className="ql-table-insert-row-below">v+row</button>
+            <button className="ql-table-insert-column-left">&lt;+column</button>
+            <button className="ql-table-insert-column-right">&gt;+column</button>
+            <button className="ql-table-delete-table">-table</button>
+            <button className="ql-table-delete-row">-row</button>
+            <button className="ql-table-delete-column">-column</button>
+          </span> */}
           <span className="ql-formats">
             {/* <select className="ql-font"></select> */}
             {/* <select className="ql-size"></select> */}
@@ -255,6 +318,7 @@ function App() {
             <button className="ql-strike"></button>
           </span>
           <span className="ql-formats">
+            <button className="ql-divider"></button>
             <button className="ql-link"></button>
             <button className="ql-discussion"></button>
             <button className="ql-image"></button>
@@ -296,11 +360,30 @@ function App() {
             <button className="ql-clean"></button>
           </span>
         </div>
-            
        
 
-        <div className="toolbar-right"></div>
+          <div className="toolbar-right">
+            <div className="current-user">
+            { !ghToken && (
+              <button onClick={() => {setShowGithubLogin(true)}}>
+                Sign in
+              </button>
+            )}
+            { ghToken && (
+              <img src={githubUserMap[userId] ? githubUserMap[userId].avatar_url : 'loading'} onClick={() => {
+                // eslint-disable-next-line no-restricted-globals
+                if (confirm('do you want to logout?')) {
+
+                  localStorage.removeItem(GH_TOKEN_KEY)
+                  setGhToken(null);
+                  setGithubUserId(undefined)
+                }
+              }}/>
+            )}
+            </div>
+           
           </div>
+        </div>
 
         <div className='content-container'>
           <div className="container">
@@ -317,7 +400,8 @@ function App() {
                     authorId: 'JohnDoe',
                   };
 
-                  DiscussionThread.create(discussionStore, discussionId, githubUserId);
+                  // TODO de anonymize comments when github token is set
+                  DiscussionThread.create(discussionStore, discussionId, userId);
                   setSelectedDiscussion(discussionId)
                   setForceUpdate(Date.now);
                 }}
@@ -342,7 +426,7 @@ function App() {
                 onDelete={function (discussionId: string): void {
                   quillEditorRef.current?.deleteId(discussionId);
                   
-                  DiscussionNote.delete(discussionStore, discussionId, githubUserId);
+                  DiscussionNote.delete(discussionStore, discussionId, userId);
                   setForceUpdate(Date.now());
                   // discussions.current = discussions.current.filter(p => p.id !== discussionId);
                 } } 
@@ -354,11 +438,11 @@ function App() {
                   
                   if (!discussionThreadToUpdate.note) {
                     quillEditorRef.current?.createDiscussion(discussionId, commentText);
-                    DiscussionThread.updateDiscussionThread(discussionStore, discussionId, githubUserId, { note: commentText, reactions: {} })
+                    DiscussionThread.updateDiscussionThread(discussionStore, discussionId, userId, { note: commentText, reactions: {} })
 
                   } else {
                     // add comment insteat
-                    DiscussionReply.create(discussionStore, discussionId, githubUserId, Math.random()+ "", commentText)
+                    DiscussionReply.create(discussionStore, discussionId, userId, Math.random()+ "", commentText)
                     // quillEditorRef.current?.createComment(discussionId, commentText);
                   }
                   // setForceUpdate(Date.now());  
