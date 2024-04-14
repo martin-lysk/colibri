@@ -1,13 +1,11 @@
 /* eslint-disable jsx-a11y/alt-text */
 import React from 'react';
-import logo from './logo.svg';
 import './App.css';
 import QuillEditor, { QuillEditorHandle } from './lib/quill/QuillEditor';
 import { AppendOnly, ListEntry } from './lib/append-only-file/AppendOnly';
 import { RichtextCrdt, VersionAdded, PersistableVersion } from './lib/crdt/RichtextCRDT';
 import { useEffect, useRef, useState } from 'react';
 
-import http from 'isomorphic-git/http/web' 
 // @ts-ignore
 import { createNodeishMemoryFs } from '@lix-js/fs'
 
@@ -16,11 +14,7 @@ import 'quill/dist/quill.core.css';
 import 'quill/dist/quill.snow.css';
 
 
-import OffsetSource from "@atjson/offset-annotations";
-import CommonMarkSource from "@atjson/source-commonmark";
-import Discussions from './ui/discussion/DiscussionList';
 import DiscussionList from './ui/discussion/DiscussionList';
-import DiscussionThreadView from './ui/discussion/DiscussionThreadView';
 import { EventStore,  DiscussionThread, MaterializedDiscussionThread, DiscussionReply, DiscussionNote, DataEvent } from './lib/crdt/Discussions';
 
 const fs = createNodeishMemoryFs();
